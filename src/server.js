@@ -1678,6 +1678,29 @@ try {
   );
 }
 
+// ------------------------------------------
+// OTP ROUTES
+// ------------------------------------------
+
+try {
+  const otpRoutes =
+    require("./routes/otpRoutes");
+
+  app.use(
+    "/api/auth/otp",
+    otpRoutes
+  );
+
+  console.log("✅ otpRoutes loaded");
+} catch (error) {
+  console.log(
+    "⚠️ otpRoutes not loaded:",
+    error.message
+  );
+}
+
+
+
 //==============================
 
 const medicalRecordRoutes = require("./routes/medicalRecordRoutes");
