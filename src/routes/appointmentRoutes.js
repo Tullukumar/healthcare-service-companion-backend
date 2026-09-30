@@ -17,6 +17,8 @@ const router = express.Router();
 
 // ==========================================
 // GET MY APPOINTMENTS
+// GET /api/appointments/my
+// PATIENT ONLY
 // ==========================================
 
 router.get(
@@ -27,18 +29,22 @@ router.get(
 );
 
 // ==========================================
-// GET DOCTOR APPOINTMENTS
+// GET DOCTOR / ADMIN APPOINTMENTS
+// GET /api/appointments/doctor
+// DOCTOR + ADMIN
 // ==========================================
 
 router.get(
   "/doctor",
   protect,
-  authorizeRoles("doctor"),
+  authorizeRoles("doctor", "admin"),
   getDoctorAppointments
 );
 
 // ==========================================
 // CREATE APPOINTMENT
+// POST /api/appointments
+// PATIENT ONLY
 // ==========================================
 
 router.post(
@@ -50,34 +56,40 @@ router.post(
 
 // ==========================================
 // APPROVE APPOINTMENT
+// PATCH /api/appointments/:id/approve
+// DOCTOR + ADMIN
 // ==========================================
 
 router.patch(
   "/:id/approve",
   protect,
-  authorizeRoles("doctor"),
+  authorizeRoles("doctor", "admin"),
   approveAppointment
 );
 
 // ==========================================
 // REJECT APPOINTMENT
+// PATCH /api/appointments/:id/reject
+// DOCTOR + ADMIN
 // ==========================================
 
 router.patch(
   "/:id/reject",
   protect,
-  authorizeRoles("doctor"),
+  authorizeRoles("doctor", "admin"),
   rejectAppointment
 );
 
 // ==========================================
 // COMPLETE APPOINTMENT
+// PATCH /api/appointments/:id/complete
+// DOCTOR + ADMIN
 // ==========================================
 
 router.patch(
   "/:id/complete",
   protect,
-  authorizeRoles("doctor"),
+  authorizeRoles("doctor", "admin"),
   completeAppointment
 );
 

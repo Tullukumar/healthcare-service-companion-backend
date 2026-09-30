@@ -1,44 +1,15 @@
-// ==========================================
-// HEALTHCOMPANION SERVER
-// ==========================================
-
-// ==========================================
-// IMPORTS
-// ==========================================
-
 const express = require("express");
 const dotenv = require("dotenv");
 const cors = require("cors");
 const http = require("http");
 const path = require("path");
-const { Server } = require("socket.io");
 const mongoose = require("mongoose");
-
-// ==========================================
-// LOAD ENVIRONMENT VARIABLES
-// ==========================================
+const { Server } = require("socket.io");
 
 dotenv.config();
 
-// ==========================================
-// EMAIL SERVICE
-// ==========================================
-
-const {
-  verifyEmailConnection,
-} = require("./utils/email");
-
-// ==========================================
-// APP INITIALIZATION
-// ==========================================
-
 const app = express();
-
 const server = http.createServer(app);
-
-// ==========================================
-// PORT
-// ==========================================
 
 const PORT = process.env.PORT || 5000;
 
@@ -46,36 +17,38 @@ const PORT = process.env.PORT || 5000;
 // MIDDLEWARE
 // ==========================================
 
-// ==========================================
-// CORS
-// ==========================================
-
 app.use(
   cors({
     origin: "http://localhost:5173",
+
+    methods: [
+      "GET",
+      "POST",
+      "PUT",
+      "PATCH",
+      "DELETE",
+    ],
+
     credentials: true,
   })
 );
 
-// ==========================================
-// JSON
-// ==========================================
-
-app.use(express.json());
-
-// ==========================================
-// URL ENCODED DATA
-// ==========================================
+app.use(
+  express.json({
+    limit: "10mb",
+  })
+);
 
 app.use(
   express.urlencoded({
     extended: true,
+    limit: "10mb",
   })
 );
 
+
 // ==========================================
-// STATIC UPLOADS
-// ==========================================
+// STATIC FILES
 //
 // Support attachments are stored in:
 // server/uploads/support
@@ -90,6 +63,7 @@ app.use(
     path.join(__dirname, "../uploads")
   )
 );
+
 
 // ==========================================
 // SOCKET.IO
@@ -109,7 +83,18 @@ const io = new Server(server, {
 
     credentials: true,
   },
+
+  transports: [
+    "polling",
+    "websocket",
+  ],
+
+  allowUpgrades: true,
+
+  pingTimeout: 60000,
+  pingInterval: 25000,
 });
+
 
 // ==========================================
 // SOCKET BOOKKEEPING
@@ -140,33 +125,17 @@ const removeSocketFromMap = (
     return;
   }
 
-  const key = String(userId);
-
-  const currentSocket =
-    map.get(key);
+  const existingSocket =
+    map.get(String(userId));
 
   if (
-    currentSocket &&
-    currentSocket.id === socket.id
+    existingSocket &&
+    existingSocket.id === socket.id
   ) {
-    map.delete(key);
+    map.delete(String(userId));
   }
 };
 
-const getUserSocket = (
-  map,
-  userId
-) => {
-  if (!userId) {
-    return null;
-  }
-
-  return (
-    map.get(
-      String(userId)
-    ) || null
-  );
-};
 
 // ==========================================
 // SOCKET CONNECTION
@@ -180,116 +149,218 @@ io.on(
       socket.id
     );
 
+
     // ========================================
-    // PATIENT PERSONAL ROOM
+    // PATIENT ROOM
     // ========================================
 
     socket.on(
       "join-patient-room",
       (patientId) => {
-        if (!patientId) {
-          return;
-        }
+        try {
+          if (!patientId) {
+            console.log(
+              "❌ Patient ID missing"
+            );
+            return;
+          }
 
-        const id =
-          String(patientId);
+          const id =
+            String(patientId);
 
-        const previousSocket =
-          patientSockets.get(id);
+          const room =
+            `patient:${id}`;
 
-        if (
-          previousSocket &&
-          previousSocket.id !==
-            socket.id
-        ) {
-          previousSocket.leave(
-            `patient:${id}`
+          socket.join(room);
+
+          socket.data.patientId =
+            id;
+
+          const previousSocket =
+            patientSockets.get(id);
+
+          if (
+            previousSocket &&
+            previousSocket.id !== socket.id
+          ) {
+            try {
+              previousSocket.leave(room);
+            } catch (error) {
+              console.log(
+                "⚠️ Previous patient socket cleanup failed:",
+                error.message
+              );
+            }
+          }
+
+          patientSockets.set(
+            id,
+            socket
+          );
+
+          console.log(
+            `👤 Patient joined room: ${room}`
+          );
+        } catch (error) {
+          console.error(
+            "❌ Patient room error:",
+            error
           );
         }
-
-        patientSockets.set(
-          id,
-          socket
-        );
-
-        socket.data =
-          socket.data || {};
-
-        socket.data.patientId =
-          id;
-
-        socket.data.userRole =
-          "patient";
-
-        socket.join(
-          `patient:${id}`
-        );
-
-        console.log(
-          `👤 Patient ${id} joined room patient:${id}`
-        );
       }
     );
 
+
     // ========================================
-    // DRIVER PERSONAL ROOM
+    // DRIVER ROOM
     // ========================================
 
     socket.on(
       "join-driver-room",
       (driverId) => {
-        if (!driverId) {
-          return;
-        }
+        try {
+          if (!driverId) {
+            console.log(
+              "❌ Driver ID missing"
+            );
+            return;
+          }
 
-        const id =
-          String(driverId);
+          const id =
+            String(driverId);
 
-        const previousSocket =
-          driverSockets.get(id);
+          const room =
+            `driver:${id}`;
 
-        if (
-          previousSocket &&
-          previousSocket.id !==
-            socket.id
-        ) {
-          previousSocket.leave(
-            `driver:${id}`
+          socket.join(room);
+
+          socket.data.driverId =
+            id;
+
+          const previousSocket =
+            driverSockets.get(id);
+
+          if (
+            previousSocket &&
+            previousSocket.id !== socket.id
+          ) {
+            try {
+              previousSocket.leave(room);
+            } catch (error) {
+              console.log(
+                "⚠️ Previous driver socket cleanup failed:",
+                error.message
+              );
+            }
+          }
+
+          driverSockets.set(
+            id,
+            socket
+          );
+
+          console.log(
+            `🚑 Driver joined room: ${room}`
+          );
+        } catch (error) {
+          console.error(
+            "❌ Driver room error:",
+            error
           );
         }
-
-        driverSockets.set(
-          id,
-          socket
-        );
-
-        socket.data =
-          socket.data || {};
-
-        socket.data.driverId =
-          id;
-
-        socket.data.userRole =
-          "driver";
-
-        socket.join(
-          `driver:${id}`
-        );
-
-        console.log(
-          `🚑 Driver ${id} joined room driver:${id}`
-        );
       }
     );
 
+
+    // ========================================
+    // PATIENT ROOM ALIAS
+    // ========================================
+
+    socket.on(
+      "patient:join",
+      (patientId) => {
+        try {
+          if (!patientId) {
+            return;
+          }
+
+          const id =
+            String(patientId);
+
+          const room =
+            `patient:${id}`;
+
+          socket.join(room);
+
+          socket.data.patientId =
+            id;
+
+          patientSockets.set(
+            id,
+            socket
+          );
+
+          console.log(
+            `👤 Patient joined room: ${room}`
+          );
+        } catch (error) {
+          console.error(
+            "❌ Patient join error:",
+            error
+          );
+        }
+      }
+    );
+
+
+    // ========================================
+    // DRIVER ROOM ALIAS
+    // ========================================
+
+    socket.on(
+      "driver:join",
+      (driverId) => {
+        try {
+          if (!driverId) {
+            return;
+          }
+
+          const id =
+            String(driverId);
+
+          const room =
+            `driver:${id}`;
+
+          socket.join(room);
+
+          socket.data.driverId =
+            id;
+
+          driverSockets.set(
+            id,
+            socket
+          );
+
+          console.log(
+            `🚑 Driver joined room: ${room}`
+          );
+        } catch (error) {
+          console.error(
+            "❌ Driver join error:",
+            error
+          );
+        }
+      }
+    );
+
+
     // ========================================
     // APPOINTMENT ROOM
-    // DOCTOR ↔ PATIENT
     // ========================================
 
     socket.on(
       "appointment:join",
-      async (data) => {
+      (data) => {
         try {
           const appointmentId =
             typeof data === "string"
@@ -297,71 +368,43 @@ io.on(
               : data?.appointmentId;
 
           if (!appointmentId) {
-            socket.emit(
-              "appointment:communication-error",
-              {
-                message:
-                  "Appointment information is missing.",
-              }
+            console.log(
+              "❌ Appointment ID missing"
             );
-
             return;
           }
 
+          const id =
+            String(appointmentId);
+
           const room =
-            `appointment:${String(
-              appointmentId
-            )}`;
+            `appointment:${id}`;
 
-          await socket.join(
-            room
-          );
-
-          socket.data =
-            socket.data || {};
+          socket.join(room);
 
           socket.data.appointmentId =
-            String(
-              appointmentId
-            );
+            id;
 
           console.log(
-            `📅 Socket ${socket.id} joined ${room}`
-          );
-
-          socket.emit(
-            "appointment:joined",
-            {
-              appointmentId:
-                String(
-                  appointmentId
-                ),
-            }
+            `📅 Socket ${socket.id} joined room: ${room}`
           );
         } catch (error) {
           console.error(
             "❌ Appointment join error:",
             error
           );
-
-          socket.emit(
-            "appointment:communication-error",
-            {
-              message:
-                "Unable to join appointment communication.",
-            }
-          );
         }
       }
     );
 
+
     // ========================================
-    // APPOINTMENT LEAVE
+    // LEAVE APPOINTMENT ROOM
     // ========================================
 
     socket.on(
       "appointment:leave",
-      async (data) => {
+      (data) => {
         try {
           const appointmentId =
             typeof data === "string"
@@ -372,28 +415,24 @@ io.on(
             return;
           }
 
-          const room =
-            `appointment:${String(
-              appointmentId
-            )}`;
+          const id =
+            String(appointmentId);
 
-          await socket.leave(
-            room
-          );
+          const room =
+            `appointment:${id}`;
+
+          socket.leave(room);
 
           if (
-            socket.data
-              ?.appointmentId ===
-            String(
-              appointmentId
-            )
+            socket.data?.appointmentId ===
+            id
           ) {
             socket.data.appointmentId =
               null;
           }
 
           console.log(
-            `📅 Socket ${socket.id} left ${room}`
+            `📅 Socket ${socket.id} left room: ${room}`
           );
         } catch (error) {
           console.error(
@@ -404,9 +443,9 @@ io.on(
       }
     );
 
+
     // ========================================
     // APPOINTMENT CHAT
-    // DOCTOR ↔ PATIENT
     // ========================================
 
     socket.on(
@@ -419,62 +458,60 @@ io.on(
             senderId,
             senderRole,
             text,
-            createdAt,
           } = message || {};
 
-          if (
-            !appointmentId ||
-            !senderId ||
-            !text
-          ) {
+          if (!appointmentId) {
+            console.log(
+              "❌ appointmentId missing"
+            );
+            return;
+          }
+
+          if (!senderId) {
+            console.log(
+              "❌ senderId missing"
+            );
             return;
           }
 
           if (
-            senderRole !==
-              "doctor" &&
-            senderRole !==
-              "patient"
+            !text ||
+            !String(text).trim()
           ) {
+            console.log(
+              "❌ Message text missing"
+            );
             return;
           }
 
-          const room =
-            `appointment:${String(
-              appointmentId
-            )}`;
+          const allowedRoles = [
+            "doctor",
+            "patient",
+            "admin",
+          ];
 
           if (
-            !socket.rooms.has(
-              room
+            !allowedRoles.includes(
+              senderRole
             )
           ) {
-            socket.emit(
-              "appointment:communication-error",
-              {
-                message:
-                  "You are not connected to this appointment.",
-              }
+            console.log(
+              "❌ Invalid sender role:",
+              senderRole
             );
-
             return;
           }
 
-          const timestamp =
-            createdAt ||
+          const now =
             new Date().toISOString();
 
           const chatMessage = {
             messageId:
               messageId ||
-              `${appointmentId}-${senderId}-${Date.now()}-${Math.random()
-                .toString(36)
-                .slice(2, 8)}`,
+              `${appointmentId}-${senderId}-${Date.now()}`,
 
             appointmentId:
-              String(
-                appointmentId
-              ),
+              String(appointmentId),
 
             senderId:
               String(senderId),
@@ -484,23 +521,14 @@ io.on(
             text:
               String(text).trim(),
 
-            createdAt:
-              timestamp,
-
-            timestamp,
+            createdAt: now,
+            timestamp: now,
           };
 
-          /*
-           * IMPORTANT:
-           *
-           * socket.to(room)
-           *
-           * sends the message ONLY to
-           * the other participant.
-           *
-           * The sender does NOT receive
-           * another copy.
-           */
+          const room =
+            `appointment:${String(
+              appointmentId
+            )}`;
 
           socket
             .to(room)
@@ -510,7 +538,7 @@ io.on(
             );
 
           console.log(
-            `💬 ${senderRole} → appointment ${appointmentId}`
+            `💬 ${senderRole} → ${room}`
           );
         } catch (error) {
           console.error(
@@ -529,9 +557,9 @@ io.on(
       }
     );
 
+
     // ========================================
     // CALL OFFER
-    // AUDIO / VIDEO
     // ========================================
 
     socket.on(
@@ -544,10 +572,11 @@ io.on(
             offer,
           } = data || {};
 
-          if (
-            !appointmentId ||
-            !offer
-          ) {
+          if (!appointmentId) {
+            return;
+          }
+
+          if (!offer) {
             return;
           }
 
@@ -563,19 +592,6 @@ io.on(
               appointmentId
             )}`;
 
-          if (
-            !socket.rooms.has(
-              room
-            )
-          ) {
-            console.log(
-              "🚫 Call offer rejected:",
-              room
-            );
-
-            return;
-          }
-
           socket
             .to(room)
             .emit(
@@ -587,13 +603,12 @@ io.on(
                   ),
 
                 callType,
-
                 offer,
               }
             );
 
           console.log(
-            `📞 ${callType} call offer sent: ${room}`
+            `📞 ${callType} call offer sent to ${room}`
           );
         } catch (error) {
           console.error(
@@ -603,6 +618,7 @@ io.on(
         }
       }
     );
+
 
     // ========================================
     // CALL ANSWER
@@ -617,10 +633,11 @@ io.on(
             answer,
           } = data || {};
 
-          if (
-            !appointmentId ||
-            !answer
-          ) {
+          if (!appointmentId) {
+            return;
+          }
+
+          if (!answer) {
             return;
           }
 
@@ -628,14 +645,6 @@ io.on(
             `appointment:${String(
               appointmentId
             )}`;
-
-          if (
-            !socket.rooms.has(
-              room
-            )
-          ) {
-            return;
-          }
 
           socket
             .to(room)
@@ -652,7 +661,7 @@ io.on(
             );
 
           console.log(
-            `📞 Call answer sent: ${room}`
+            `📞 Call answer sent to ${room}`
           );
         } catch (error) {
           console.error(
@@ -662,6 +671,7 @@ io.on(
         }
       }
     );
+
 
     // ========================================
     // ICE CANDIDATE
@@ -688,19 +698,6 @@ io.on(
               appointmentId
             )}`;
 
-          if (
-            !socket.rooms.has(
-              room
-            )
-          ) {
-            console.log(
-              "🚫 ICE candidate rejected:",
-              room
-            );
-
-            return;
-          }
-
           socket
             .to(room)
             .emit(
@@ -723,6 +720,7 @@ io.on(
       }
     );
 
+
     // ========================================
     // CALL ENDED
     // ========================================
@@ -744,14 +742,6 @@ io.on(
               appointmentId
             )}`;
 
-          if (
-            !socket.rooms.has(
-              room
-            )
-          ) {
-            return;
-          }
-
           socket
             .to(room)
             .emit(
@@ -765,7 +755,7 @@ io.on(
             );
 
           console.log(
-            `📴 Call ended: ${room}`
+            `📴 Call ended in ${room}`
           );
         } catch (error) {
           console.error(
@@ -776,142 +766,9 @@ io.on(
       }
     );
 
-    // ========================================
-    // AMBULANCE REQUEST ROOM
-    // ========================================
-
-    socket.on(
-      "join-ambulance-request",
-      (requestId) => {
-        if (!requestId) {
-          return;
-        }
-
-        const room =
-          `ambulance-request:${String(
-            requestId
-          )}`;
-
-        socket.join(room);
-
-        socket.data =
-          socket.data || {};
-
-        socket.data.ambulanceRequestId =
-          String(requestId);
-
-        console.log(
-          `🚑 Socket ${socket.id} joined ${room}`
-        );
-      }
-    );
 
     // ========================================
-    // AMBULANCE REQUEST STATUS
-    // ========================================
-
-    socket.on(
-      "ambulance:request-status",
-      (data) => {
-        try {
-          const {
-            requestId,
-            status,
-          } = data || {};
-
-          if (
-            !requestId ||
-            !status
-          ) {
-            return;
-          }
-
-          const room =
-            `ambulance-request:${String(
-              requestId
-            )}`;
-
-          socket
-            .to(room)
-            .emit(
-              "ambulance:request-status",
-              {
-                requestId:
-                  String(
-                    requestId
-                  ),
-
-                status,
-              }
-            );
-
-          console.log(
-            `🚑 Ambulance status ${status} → ${room}`
-          );
-        } catch (error) {
-          console.error(
-            "❌ Ambulance status error:",
-            error
-          );
-        }
-      }
-    );
-
-    // ========================================
-    // AMBULANCE REQUEST ACCEPTED
-    // ========================================
-
-    socket.on(
-      "ambulance:request-accepted",
-      (data) => {
-        try {
-          const {
-            requestId,
-            driverId,
-          } = data || {};
-
-          if (!requestId) {
-            return;
-          }
-
-          const room =
-            `ambulance-request:${String(
-              requestId
-            )}`;
-
-          socket
-            .to(room)
-            .emit(
-              "ambulance:request-accepted",
-              {
-                requestId:
-                  String(
-                    requestId
-                  ),
-
-                driverId:
-                  driverId
-                    ? String(
-                        driverId
-                      )
-                    : null,
-              }
-            );
-
-          console.log(
-            `🚑 Ambulance request accepted → ${room}`
-          );
-        } catch (error) {
-          console.error(
-            "❌ Ambulance request accepted error:",
-            error
-          );
-        }
-      }
-    );
-    // ========================================
-    // AMBULANCE CHAT MESSAGE
-    // DRIVER ↔ PATIENT
+    // AMBULANCE CHAT
     // ========================================
 
     socket.on(
@@ -919,291 +776,128 @@ io.on(
       (message) => {
         try {
           const {
-            messageId,
             requestId,
             senderId,
             receiverId,
             senderRole,
             text,
-            createdAt,
           } = message || {};
-
-          // ------------------------------------
-          // BASIC VALIDATION
-          // ------------------------------------
 
           if (!requestId) {
             console.log(
-              "❌ Ambulance chat: requestId missing"
+              "❌ requestId missing"
             );
-
             return;
           }
 
           if (!senderId) {
             console.log(
-              "❌ Ambulance chat: senderId missing"
+              "❌ senderId missing"
             );
-
             return;
           }
 
           if (!receiverId) {
             console.log(
-              "❌ Ambulance chat: receiverId missing"
+              "❌ receiverId missing"
             );
-
-            return;
-          }
-
-          if (!text || !String(text).trim()) {
             return;
           }
 
           if (
-            senderRole !== "patient" &&
-            senderRole !== "driver"
+            !text ||
+            !String(text).trim()
           ) {
             console.log(
-              "❌ Ambulance chat: invalid sender role:",
-              senderRole
+              "❌ Message text missing"
             );
-
             return;
           }
 
-          // ------------------------------------
-          // REQUEST ROOM
-          // ------------------------------------
-
-          const requestRoom =
-            `ambulance-request:${String(
-              requestId
-            )}`;
-
-          // ------------------------------------
-          // CHECK THAT SENDER JOINED REQUEST
-          // ------------------------------------
+          const allowedRoles = [
+            "patient",
+            "ambulance",
+            "driver",
+          ];
 
           if (
-            !socket.rooms.has(
-              requestRoom
+            !allowedRoles.includes(
+              senderRole
             )
           ) {
             console.log(
-              "🚫 Ambulance chat rejected - sender not in request room:",
-              {
-                socketId: socket.id,
-                requestId:
-                  String(requestId),
-              }
+              "❌ Invalid ambulance sender role:",
+              senderRole
             );
-
-            socket.emit(
-              "ambulance:chat-error",
-              {
-                requestId:
-                  String(requestId),
-
-                message:
-                  "You are not connected to this ambulance request.",
-              }
-            );
-
             return;
           }
 
-          // ------------------------------------
-          // NORMALIZE IDs
-          // ------------------------------------
-
-          const normalizedSenderId =
-            String(senderId);
-
-          const normalizedReceiverId =
-            String(receiverId);
-
-          const normalizedRequestId =
-            String(requestId);
-
-          // ------------------------------------
-          // GENERATE UNIQUE MESSAGE ID
-          // ------------------------------------
-
-          const finalMessageId =
-            messageId ||
-            `${normalizedRequestId}-${normalizedSenderId}-${Date.now()}-${Math.random()
-              .toString(36)
-              .slice(2, 10)}`;
-
-          // ------------------------------------
-          // TIMESTAMP
-          // ------------------------------------
-
-          const timestamp =
-            createdAt ||
+          const now =
             new Date().toISOString();
 
-          // ------------------------------------
-          // FINAL MESSAGE
-          // ------------------------------------
-
-          const outgoingMessage = {
+          const chatMessage = {
             messageId:
-              String(finalMessageId),
+              message.messageId ||
+              `${requestId}-${senderId}-${Date.now()}`,
 
             requestId:
-              normalizedRequestId,
+              String(requestId),
 
             senderId:
-              normalizedSenderId,
+              String(senderId),
 
             receiverId:
-              normalizedReceiverId,
+              String(receiverId),
 
             senderRole,
 
             text:
               String(text).trim(),
 
-            createdAt:
-              timestamp,
-
-            timestamp,
+            createdAt: now,
+            timestamp: now,
           };
 
-          // ------------------------------------
-          // FIND RECEIVER SOCKET
-          // ------------------------------------
-
-          let receiverSocket = null;
-
           if (
-            senderRole === "patient"
+            senderRole ===
+            "patient"
           ) {
-            /*
-             * Patient → Driver
-             */
+            const driverRoom =
+              `driver:${String(
+                receiverId
+              )}`;
 
-            receiverSocket =
-              getUserSocket(
-                driverSockets,
-                normalizedReceiverId
+            io
+              .to(driverRoom)
+              .emit(
+                "ambulance:chat-message",
+                chatMessage
               );
-          } else if (
-            senderRole === "driver"
-          ) {
-            /*
-             * Driver → Patient
-             */
 
-            receiverSocket =
-              getUserSocket(
-                patientSockets,
-                normalizedReceiverId
+            console.log(
+              `📤 Patient → Driver: ${driverRoom}`
+            );
+          } else {
+            const patientRoom =
+              `patient:${String(
+                receiverId
+              )}`;
+
+            io
+              .to(patientRoom)
+              .emit(
+                "ambulance:chat-message",
+                chatMessage
               );
-          }
 
-          // ------------------------------------
-          // RECEIVER NOT CONNECTED
-          // ------------------------------------
-
-          if (!receiverSocket) {
             console.log(
-              "⚠️ Ambulance chat receiver is offline:",
-              {
-                senderRole,
-                senderId:
-                  normalizedSenderId,
-                receiverId:
-                  normalizedReceiverId,
-                requestId:
-                  normalizedRequestId,
-              }
+              `📤 Driver → Patient: ${patientRoom}`
             );
-
-            /*
-             * Do NOT broadcast through the request room.
-             *
-             * This is important.
-             *
-             * If we send through:
-             *
-             * io.to(requestRoom)
-             *
-             * the sender can receive another copy
-             * of their own message.
-             *
-             * It can also create duplicates when
-             * the same user has multiple connections.
-             */
-
-            socket.emit(
-              "ambulance:chat-delivery-status",
-              {
-                requestId:
-                  normalizedRequestId,
-
-                messageId:
-                  String(
-                    finalMessageId
-                  ),
-
-                delivered: false,
-
-                reason:
-                  "receiver-offline",
-              }
-            );
-
-            return;
           }
-
-          // ------------------------------------
-          // DON'T SEND MESSAGE TO SAME SOCKET
-          // ------------------------------------
-
-          if (
-            receiverSocket.id ===
-            socket.id
-          ) {
-            console.log(
-              "⚠️ Sender and receiver socket are identical."
-            );
-
-            return;
-          }
-
-          // ------------------------------------
-          // SEND ONLY TO RECEIVER
-          // ------------------------------------
-
-          receiverSocket.emit(
-            "ambulance:chat-message",
-            outgoingMessage
-          );
-
-          // ------------------------------------
-          // DELIVERY CONFIRMATION
-          // ------------------------------------
 
           socket.emit(
-            "ambulance:chat-delivery-status",
-            {
-              requestId:
-                normalizedRequestId,
-
-              messageId:
-                String(
-                  finalMessageId
-                ),
-
-              delivered: true,
-            }
-          );
-
-          console.log(
-            `💬 ${senderRole} → ${normalizedReceiverId} | request ${normalizedRequestId}`
+            "ambulance:chat-message-sent",
+            chatMessage
           );
         } catch (error) {
           console.error(
@@ -1215,7 +909,7 @@ io.on(
             "ambulance:chat-error",
             {
               message:
-                "Unable to send ambulance message.",
+                "Unable to send message.",
             }
           );
         }
@@ -1224,647 +918,646 @@ io.on(
 
 
     // ========================================
-    // AMBULANCE CHAT TYPING
+    // AMBULANCE REQUEST ROOM
     // ========================================
 
     socket.on(
-      "ambulance:typing",
-      (data) => {
+      "ambulance:join-request",
+      (requestId) => {
         try {
-          const {
-            requestId,
-            receiverId,
-            senderId,
-            senderRole,
-            isTyping,
-          } = data || {};
-
-          if (
-            !requestId ||
-            !receiverId ||
-            !senderId
-          ) {
-            return;
-          }
-
-          if (
-            senderRole !== "patient" &&
-            senderRole !== "driver"
-          ) {
-            return;
-          }
-
-          const receiverSocket =
-            senderRole === "patient"
-              ? getUserSocket(
-                  driverSockets,
-                  receiverId
-                )
-              : getUserSocket(
-                  patientSockets,
-                  receiverId
-                );
-
-          if (!receiverSocket) {
-            return;
-          }
-
-          receiverSocket.emit(
-            "ambulance:typing",
-            {
-              requestId:
-                String(requestId),
-
-              senderId:
-                String(senderId),
-
-              senderRole,
-
-              isTyping:
-                Boolean(isTyping),
-            }
-          );
-        } catch (error) {
-          console.error(
-            "❌ Ambulance typing error:",
-            error
-          );
-        }
-      }
-    );
-
-
-    // ========================================
-    // AMBULANCE MESSAGE READ
-    // ========================================
-
-    socket.on(
-      "ambulance:message-read",
-      (data) => {
-        try {
-          const {
-            requestId,
-            messageId,
-            senderId,
-            receiverId,
-            receiverRole,
-          } = data || {};
-
-          if (
-            !requestId ||
-            !messageId ||
-            !senderId ||
-            !receiverId
-          ) {
-            return;
-          }
-
-          let senderSocket = null;
-
-          if (
-            receiverRole === "patient"
-          ) {
-            senderSocket =
-              getUserSocket(
-                patientSockets,
-                senderId
-              );
-          } else if (
-            receiverRole === "driver"
-          ) {
-            senderSocket =
-              getUserSocket(
-                driverSockets,
-                senderId
-              );
-          }
-
-          if (!senderSocket) {
-            return;
-          }
-
-          senderSocket.emit(
-            "ambulance:message-read",
-            {
-              requestId:
-                String(requestId),
-
-              messageId:
-                String(messageId),
-
-              receiverId:
-                String(receiverId),
-            }
-          );
-        } catch (error) {
-          console.error(
-            "❌ Ambulance message-read error:",
-            error
-          );
-        }
-      }
-    );
-
-
-    // ========================================
-    // DRIVER LOCATION UPDATE
-    // ========================================
-
-    socket.on(
-      "ambulance:driver-location",
-      (data) => {
-        try {
-          const {
-            requestId,
-            driverId,
-            latitude,
-            longitude,
-          } = data || {};
-
-          if (
-            !requestId ||
-            !driverId ||
-            latitude === undefined ||
-            longitude === undefined
-          ) {
-            return;
-          }
-
-          const room =
-            `ambulance-request:${String(
-              requestId
-            )}`;
-
-          /*
-           * Send location to everyone else
-           * in this ambulance request.
-           *
-           * Sender does not receive another copy.
-           */
-
-          socket
-            .to(room)
-            .emit(
-              "ambulance:driver-location",
-              {
-                requestId:
-                  String(
-                    requestId
-                  ),
-
-                driverId:
-                  String(driverId),
-
-                latitude:
-                  Number(latitude),
-
-                longitude:
-                  Number(longitude),
-              }
-            );
-        } catch (error) {
-          console.error(
-            "❌ Driver location error:",
-            error
-          );
-        }
-      }
-    );
-
-
-    // ========================================
-    // AMBULANCE STATUS UPDATE
-    // ========================================
-
-    socket.on(
-      "ambulance:update-status",
-      (data) => {
-        try {
-          const {
-            requestId,
-            status,
-          } = data || {};
-
-          if (
-            !requestId ||
-            !status
-          ) {
-            return;
-          }
-
-          const room =
-            `ambulance-request:${String(
-              requestId
-            )}`;
-
-          socket
-            .to(room)
-            .emit(
-              "ambulance:request-status",
-              {
-                requestId:
-                  String(
-                    requestId
-                  ),
-
-                status,
-              }
-            );
-
-          console.log(
-            `🚑 Ambulance status updated: ${status}`
-          );
-        } catch (error) {
-          console.error(
-            "❌ Ambulance status update error:",
-            error
-          );
-        }
-      }
-    );
-
-
-    // ========================================
-    // DRIVER ACCEPTS AMBULANCE REQUEST
-    // ========================================
-
-    socket.on(
-      "ambulance:accept-request",
-      (data) => {
-        try {
-          const {
-            requestId,
-            driverId,
-          } = data || {};
-
           if (!requestId) {
             return;
           }
 
+          const id =
+            String(requestId);
+
           const room =
-            `ambulance-request:${String(
-              requestId
-            )}`;
+            `ambulance-request:${id}`;
 
-          socket
-            .to(room)
-            .emit(
-              "ambulance:request-accepted",
-              {
-                requestId:
-                  String(
-                    requestId
-                  ),
+          socket.join(room);
 
-                driverId:
-                  driverId
-                    ? String(
-                        driverId
-                      )
-                    : null,
-              }
-            );
+          socket.data.ambulanceRequestId =
+            id;
 
           console.log(
-            `🚑 Request accepted: ${requestId}`
+            `🚑 Socket ${socket.id} joined ambulance request room: ${room}`
           );
         } catch (error) {
           console.error(
-            "❌ Ambulance accept error:",
+            "❌ Ambulance request room error:",
             error
           );
         }
       }
     );
 
+// ========================================
+// AMBULANCE VOICE CALL - CALL OFFER
+// ========================================
 
-    // ========================================
-    // AMBULANCE CALL OFFER
-    // ========================================
+socket.on(
+  "ambulance:call-offer",
+  (data) => {
+    try {
+      const {
+        requestId,
+        receiverId,
+        callType,
+        offer,
+      } = data || {};
 
-    socket.on(
-      "ambulance:call-offer",
-      (data) => {
-        try {
-          const {
-            requestId,
-            offer,
-            callType,
-            receiverId,
-          } = data || {};
-
-          if (
-            !requestId ||
-            !offer ||
-            !receiverId
-          ) {
-            return;
-          }
-
-          if (
-            callType !== "audio" &&
-            callType !== "video"
-          ) {
-            return;
-          }
-
-          let receiverSocket =
-            null;
-
-          /*
-           * Determine receiver based on
-           * the sender's role.
-           */
-
-          if (
-            socket.data?.userRole ===
-            "patient"
-          ) {
-            receiverSocket =
-              getUserSocket(
-                driverSockets,
-                receiverId
-              );
-          } else if (
-            socket.data?.userRole ===
-            "driver"
-          ) {
-            receiverSocket =
-              getUserSocket(
-                patientSockets,
-                receiverId
-              );
-          }
-
-          if (!receiverSocket) {
-            console.log(
-              "⚠️ Ambulance call receiver offline"
-            );
-
-            return;
-          }
-
-          if (
-            receiverSocket.id ===
-            socket.id
-          ) {
-            return;
-          }
-
-          receiverSocket.emit(
-            "ambulance:call-offer",
-            {
-              requestId:
-                String(requestId),
-
-              callType,
-
-              offer,
-            }
-          );
-
-          console.log(
-            `📞 Ambulance ${callType} offer sent`
-          );
-        } catch (error) {
-          console.error(
-            "❌ Ambulance call offer error:",
-            error
-          );
-        }
+      if (!requestId) {
+        console.log(
+          "❌ Ambulance call requestId missing"
+        );
+        return;
       }
-    );
 
-
-    // ========================================
-    // AMBULANCE CALL ANSWER
-    // ========================================
-
-    socket.on(
-      "ambulance:call-answer",
-      (data) => {
-        try {
-          const {
-            requestId,
-            answer,
-            receiverId,
-          } = data || {};
-
-          if (
-            !requestId ||
-            !answer ||
-            !receiverId
-          ) {
-            return;
-          }
-
-          let receiverSocket =
-            null;
-
-          if (
-            socket.data?.userRole ===
-            "patient"
-          ) {
-            receiverSocket =
-              getUserSocket(
-                driverSockets,
-                receiverId
-              );
-          } else if (
-            socket.data?.userRole ===
-            "driver"
-          ) {
-            receiverSocket =
-              getUserSocket(
-                patientSockets,
-                receiverId
-              );
-          }
-
-          if (!receiverSocket) {
-            return;
-          }
-
-          if (
-            receiverSocket.id ===
-            socket.id
-          ) {
-            return;
-          }
-
-          receiverSocket.emit(
-            "ambulance:call-answer",
-            {
-              requestId:
-                String(requestId),
-
-              answer,
-            }
-          );
-
-          console.log(
-            `📞 Ambulance call answer sent`
-          );
-        } catch (error) {
-          console.error(
-            "❌ Ambulance call answer error:",
-            error
-          );
-        }
+      if (!receiverId) {
+        console.log(
+          "❌ Ambulance call receiverId missing"
+        );
+        return;
       }
-    );
 
-
-    // ========================================
-    // AMBULANCE ICE CANDIDATE
-    // ========================================
-
-    socket.on(
-      "ambulance:ice-candidate",
-      (data) => {
-        try {
-          const {
-            requestId,
-            candidate,
-            receiverId,
-          } = data || {};
-
-          if (
-            !requestId ||
-            !candidate ||
-            !receiverId
-          ) {
-            return;
-          }
-
-          let receiverSocket =
-            null;
-
-          if (
-            socket.data?.userRole ===
-            "patient"
-          ) {
-            receiverSocket =
-              getUserSocket(
-                driverSockets,
-                receiverId
-              );
-          } else if (
-            socket.data?.userRole ===
-            "driver"
-          ) {
-            receiverSocket =
-              getUserSocket(
-                patientSockets,
-                receiverId
-              );
-          }
-
-          if (!receiverSocket) {
-            return;
-          }
-
-          if (
-            receiverSocket.id ===
-            socket.id
-          ) {
-            return;
-          }
-
-          receiverSocket.emit(
-            "ambulance:ice-candidate",
-            {
-              requestId:
-                String(requestId),
-
-              candidate,
-            }
-          );
-        } catch (error) {
-          console.error(
-            "❌ Ambulance ICE error:",
-            error
-          );
-        }
+      if (!offer) {
+        console.log(
+          "❌ Ambulance call offer missing"
+        );
+        return;
       }
-    );
 
-
-    // ========================================
-    // AMBULANCE CALL ENDED
-    // ========================================
-
-    socket.on(
-      "ambulance:call-ended",
-      (data) => {
-        try {
-          const {
-            requestId,
-            receiverId,
-          } = data || {};
-
-          if (
-            !requestId ||
-            !receiverId
-          ) {
-            return;
-          }
-
-          let receiverSocket =
-            null;
-
-          if (
-            socket.data?.userRole ===
-            "patient"
-          ) {
-            receiverSocket =
-              getUserSocket(
-                driverSockets,
-                receiverId
-              );
-          } else if (
-            socket.data?.userRole ===
-            "driver"
-          ) {
-            receiverSocket =
-              getUserSocket(
-                patientSockets,
-                receiverId
-              );
-          }
-
-          if (!receiverSocket) {
-            return;
-          }
-
-          if (
-            receiverSocket.id ===
-            socket.id
-          ) {
-            return;
-          }
-
-          receiverSocket.emit(
-            "ambulance:call-ended",
-            {
-              requestId:
-                String(requestId),
-            }
-          );
-
-          console.log(
-            `📴 Ambulance call ended: ${requestId}`
-          );
-        } catch (error) {
-          console.error(
-            "❌ Ambulance call ended error:",
-            error
-          );
-        }
+      if (callType !== "audio") {
+        console.log(
+          "❌ Only audio ambulance calls are supported"
+        );
+        return;
       }
-    );
-        // ========================================
-    // SOCKET DISCONNECT
+
+      // ----------------------------------------
+      // Identify caller from the existing
+      // socket bookkeeping already used by
+      // this server.
+      // ----------------------------------------
+
+      let callerId = null;
+      let callerRole = null;
+
+      if (socket.data?.patientId) {
+        callerId =
+          String(socket.data.patientId);
+
+        callerRole = "patient";
+      } else if (
+        socket.data?.driverId
+      ) {
+        callerId =
+          String(socket.data.driverId);
+
+        callerRole = "driver";
+      }
+
+      if (!callerId || !callerRole) {
+        socket.emit(
+          "ambulance:call-error",
+          {
+            requestId:
+              String(requestId),
+
+            message:
+              "Unable to identify caller.",
+          }
+        );
+
+        return;
+      }
+
+      // ----------------------------------------
+      // Find receiver using the EXISTING maps.
+      // ----------------------------------------
+
+      let receiverSocket = null;
+
+      if (callerRole === "patient") {
+        receiverSocket =
+          driverSockets.get(
+            String(receiverId)
+          );
+      } else if (
+        callerRole === "driver"
+      ) {
+        receiverSocket =
+          patientSockets.get(
+            String(receiverId)
+          );
+      }
+
+      if (!receiverSocket) {
+        socket.emit(
+          "ambulance:call-error",
+          {
+            requestId:
+              String(requestId),
+
+            message:
+              "The other person is currently offline.",
+          }
+        );
+
+        console.log(
+          `📵 Ambulance call receiver offline: ${receiverId}`
+        );
+
+        return;
+      }
+
+      // ----------------------------------------
+      // Forward offer
+      // ----------------------------------------
+
+      receiverSocket.emit(
+        "ambulance:call-offer",
+        {
+          requestId:
+            String(requestId),
+
+          callerId,
+
+          callerRole,
+
+          callType: "audio",
+
+          offer,
+        }
+      );
+
+      console.log(
+        `📞 Ambulance audio call offer: ${callerRole} ${callerId} → ${receiverId}`
+      );
+    } catch (error) {
+      console.error(
+        "❌ Ambulance call offer error:",
+        error
+      );
+
+      socket.emit(
+        "ambulance:call-error",
+        {
+          requestId:
+            data?.requestId
+              ? String(data.requestId)
+              : null,
+
+          message:
+            "Unable to start ambulance call.",
+        }
+      );
+    }
+  }
+);
+
+
+// ========================================
+// AMBULANCE VOICE CALL - CALL ANSWER
+// ========================================
+
+socket.on(
+  "ambulance:call-answer",
+  (data) => {
+    try {
+      const {
+        requestId,
+        receiverId,
+        answer,
+      } = data || {};
+
+      if (!requestId) {
+        console.log(
+          "❌ Ambulance answer requestId missing"
+        );
+        return;
+      }
+
+      if (!receiverId) {
+        console.log(
+          "❌ Ambulance answer receiverId missing"
+        );
+        return;
+      }
+
+      if (!answer) {
+        console.log(
+          "❌ Ambulance answer missing"
+        );
+        return;
+      }
+
+      // ----------------------------------------
+      // Identify answering user
+      // ----------------------------------------
+
+      let callerId = null;
+      let callerRole = null;
+
+      if (socket.data?.patientId) {
+        callerId =
+          String(socket.data.patientId);
+
+        callerRole = "patient";
+      } else if (
+        socket.data?.driverId
+      ) {
+        callerId =
+          String(socket.data.driverId);
+
+        callerRole = "driver";
+      }
+
+      if (!callerId || !callerRole) {
+        return;
+      }
+
+      // ----------------------------------------
+      // Find original caller
+      // ----------------------------------------
+
+      let receiverSocket = null;
+
+      if (callerRole === "patient") {
+        receiverSocket =
+          driverSockets.get(
+            String(receiverId)
+          );
+      } else if (
+        callerRole === "driver"
+      ) {
+        receiverSocket =
+          patientSockets.get(
+            String(receiverId)
+          );
+      }
+
+      if (!receiverSocket) {
+        socket.emit(
+          "ambulance:call-error",
+          {
+            requestId:
+              String(requestId),
+
+            message:
+              "The caller is no longer connected.",
+          }
+        );
+
+        return;
+      }
+
+      receiverSocket.emit(
+        "ambulance:call-answer",
+        {
+          requestId:
+            String(requestId),
+
+          answer,
+        }
+      );
+
+      console.log(
+        `📞 Ambulance call answer: ${callerRole} ${callerId} → ${receiverId}`
+      );
+    } catch (error) {
+      console.error(
+        "❌ Ambulance call answer error:",
+        error
+      );
+    }
+  }
+);
+
+
+// ========================================
+// AMBULANCE VOICE CALL - ICE CANDIDATE
+// ========================================
+
+socket.on(
+  "ambulance:ice-candidate",
+  (data) => {
+    try {
+      const {
+        requestId,
+        receiverId,
+        candidate,
+      } = data || {};
+
+      if (!requestId) {
+        return;
+      }
+
+      if (!receiverId) {
+        return;
+      }
+
+      if (!candidate) {
+        return;
+      }
+
+      // ----------------------------------------
+      // Identify sender
+      // ----------------------------------------
+
+      let senderRole = null;
+
+      if (socket.data?.patientId) {
+        senderRole = "patient";
+      } else if (
+        socket.data?.driverId
+      ) {
+        senderRole = "driver";
+      }
+
+      if (!senderRole) {
+        return;
+      }
+
+      // ----------------------------------------
+      // Find other side
+      // ----------------------------------------
+
+      let receiverSocket = null;
+
+      if (senderRole === "patient") {
+        receiverSocket =
+          driverSockets.get(
+            String(receiverId)
+          );
+      } else if (
+        senderRole === "driver"
+      ) {
+        receiverSocket =
+          patientSockets.get(
+            String(receiverId)
+          );
+      }
+
+      if (!receiverSocket) {
+        return;
+      }
+
+      receiverSocket.emit(
+        "ambulance:ice-candidate",
+        {
+          requestId:
+            String(requestId),
+
+          candidate,
+        }
+      );
+    } catch (error) {
+      console.error(
+        "❌ Ambulance ICE candidate error:",
+        error
+      );
+    }
+  }
+);
+
+
+// ========================================
+// AMBULANCE VOICE CALL - END CALL
+// ========================================
+
+socket.on(
+  "ambulance:call-ended",
+  (data) => {
+    try {
+      const {
+        requestId,
+        receiverId,
+      } = data || {};
+
+      if (!requestId) {
+        return;
+      }
+
+      if (!receiverId) {
+        return;
+      }
+
+      // ----------------------------------------
+      // Identify sender
+      // ----------------------------------------
+
+      let senderRole = null;
+
+      if (socket.data?.patientId) {
+        senderRole = "patient";
+      } else if (
+        socket.data?.driverId
+      ) {
+        senderRole = "driver";
+      }
+
+      if (!senderRole) {
+        return;
+      }
+
+      // ----------------------------------------
+      // Find receiver
+      // ----------------------------------------
+
+      let receiverSocket = null;
+
+      if (senderRole === "patient") {
+        receiverSocket =
+          driverSockets.get(
+            String(receiverId)
+          );
+      } else if (
+        senderRole === "driver"
+      ) {
+        receiverSocket =
+          patientSockets.get(
+            String(receiverId)
+          );
+      }
+
+      if (!receiverSocket) {
+        return;
+      }
+
+      receiverSocket.emit(
+        "ambulance:call-ended",
+        {
+          requestId:
+            String(requestId),
+        }
+      );
+
+      console.log(
+        `📴 Ambulance call ended: ${requestId}`
+      );
+    } catch (error) {
+      console.error(
+        "❌ Ambulance call ended error:",
+        error
+      );
+    }
+  }
+);
+
+
+// ========================================
+// AMBULANCE VOICE CALL - REJECT
+// ========================================
+
+socket.on(
+  "ambulance:call-rejected",
+  (data) => {
+    try {
+      const {
+        requestId,
+        receiverId,
+      } = data || {};
+
+      if (!requestId) {
+        return;
+      }
+
+      if (!receiverId) {
+        return;
+      }
+
+      let senderRole = null;
+
+      if (socket.data?.patientId) {
+        senderRole = "patient";
+      } else if (
+        socket.data?.driverId
+      ) {
+        senderRole = "driver";
+      }
+
+      if (!senderRole) {
+        return;
+      }
+
+      let receiverSocket = null;
+
+      if (senderRole === "patient") {
+        receiverSocket =
+          driverSockets.get(
+            String(receiverId)
+          );
+      } else if (
+        senderRole === "driver"
+      ) {
+        receiverSocket =
+          patientSockets.get(
+            String(receiverId)
+          );
+      }
+
+      if (!receiverSocket) {
+        return;
+      }
+
+      receiverSocket.emit(
+        "ambulance:call-rejected",
+        {
+          requestId:
+            String(requestId),
+        }
+      );
+
+      console.log(
+        `📵 Ambulance call rejected: ${requestId}`
+      );
+    } catch (error) {
+      console.error(
+        "❌ Ambulance call rejection error:",
+        error
+      );
+    }
+  }
+);
+
+
+// ========================================
+// AMBULANCE VOICE CALL - BUSY
+// ========================================
+
+socket.on(
+  "ambulance:call-busy",
+  (data) => {
+    try {
+      const {
+        requestId,
+        receiverId,
+      } = data || {};
+
+      if (!requestId) {
+        return;
+      }
+
+      if (!receiverId) {
+        return;
+      }
+
+      let senderRole = null;
+
+      if (socket.data?.patientId) {
+        senderRole = "patient";
+      } else if (
+        socket.data?.driverId
+      ) {
+        senderRole = "driver";
+      }
+
+      if (!senderRole) {
+        return;
+      }
+
+      let receiverSocket = null;
+
+      if (senderRole === "patient") {
+        receiverSocket =
+          driverSockets.get(
+            String(receiverId)
+          );
+      } else if (
+        senderRole === "driver"
+      ) {
+        receiverSocket =
+          patientSockets.get(
+            String(receiverId)
+          );
+      }
+
+      if (!receiverSocket) {
+        return;
+      }
+
+      receiverSocket.emit(
+        "ambulance:call-busy",
+        {
+          requestId:
+            String(requestId),
+        }
+      );
+    } catch (error) {
+      console.error(
+        "❌ Ambulance call busy error:",
+        error
+      );
+    }
+  }
+);
+
+
+
+    // ========================================
+    // DISCONNECT
     // ========================================
 
     socket.on(
@@ -1873,13 +1566,8 @@ io.on(
         console.log(
           "🔌 Socket disconnected:",
           socket.id,
-          "| reason:",
           reason
         );
-
-        // ------------------------------------
-        // REMOVE PATIENT SOCKET
-        // ------------------------------------
 
         if (
           socket.data?.patientId
@@ -1891,10 +1579,6 @@ io.on(
           );
         }
 
-        // ------------------------------------
-        // REMOVE DRIVER SOCKET
-        // ------------------------------------
-
         if (
           socket.data?.driverId
         ) {
@@ -1904,10 +1588,6 @@ io.on(
             socket
           );
         }
-
-        // ------------------------------------
-        // CLEAN SOCKET DATA
-        // ------------------------------------
 
         if (socket.data) {
           socket.data.patientId =
@@ -1992,6 +1672,14 @@ try {
   );
 }
 
+//==============================
+
+const medicalRecordRoutes = require("./routes/medicalRecordRoutes");
+app.use(
+  "/api/medical-records",
+  medicalRecordRoutes
+);
+
 
 // ------------------------------------------
 // USER ROUTES
@@ -2072,6 +1760,32 @@ try {
 } catch (error) {
   console.log(
     "⚠️ ambulanceRoutes not loaded:",
+    error.message
+  );
+}
+
+
+// ------------------------------------------
+// AMBULANCE REQUEST ROUTES
+// ------------------------------------------
+
+try {
+  const ambulanceRequestRoutes =
+    require(
+      "./routes/ambulanceRequestRoutes"
+    );
+
+  app.use(
+    "/api/ambulance-requests",
+    ambulanceRequestRoutes
+  );
+
+  console.log(
+    "✅ ambulanceRequestRoutes loaded"
+  );
+} catch (error) {
+  console.log(
+    "⚠️ ambulanceRequestRoutes not loaded:",
     error.message
   );
 }
@@ -2178,6 +1892,7 @@ try {
   );
 }
 
+
 // ==========================================
 // AI HEALTH COMPANION
 // /api/ai
@@ -2231,7 +1946,9 @@ app.use(
     }
 
     res.status(
-      error.status || 500
+      error.statusCode ||
+      error.status ||
+      500
     ).json({
       success: false,
       message:
@@ -2246,34 +1963,29 @@ app.use(
 // MONGODB CONNECTION
 // ==========================================
 
-const connectDatabase =
-  async () => {
-    try {
-      const mongoUri =
-        process.env.MONGO_URI;
+const MONGO_URI =
+  process.env.MONGO_URI ||
+  process.env.MONGODB_URI;
 
-      if (!mongoUri) {
-        throw new Error(
-          "MONGO_URI is not defined in .env"
-        );
-      }
-
-      await mongoose.connect(
-        mongoUri
-      );
-
+if (!MONGO_URI) {
+  console.error(
+    "❌ MongoDB URI is missing in .env"
+  );
+} else {
+  mongoose
+    .connect(MONGO_URI)
+    .then(() => {
       console.log(
         "✅ MongoDB connected successfully"
       );
-    } catch (error) {
+    })
+    .catch((error) => {
       console.error(
         "❌ MongoDB connection failed:",
         error.message
       );
-
-      process.exit(1);
-    }
-  };
+    });
+}
 
 
 // ==========================================
@@ -2284,7 +1996,7 @@ mongoose.connection.on(
   "connected",
   () => {
     console.log(
-      "🟢 Mongoose connection established"
+      "🟢 Mongoose connected to MongoDB"
     );
   }
 );
@@ -2293,8 +2005,8 @@ mongoose.connection.on(
   "error",
   (error) => {
     console.error(
-      "❌ Mongoose error:",
-      error
+      "🔴 Mongoose connection error:",
+      error.message
     );
   }
 );
@@ -2303,7 +2015,7 @@ mongoose.connection.on(
   "disconnected",
   () => {
     console.log(
-      "🟡 MongoDB disconnected"
+      "🟡 Mongoose disconnected"
     );
   }
 );
@@ -2313,74 +2025,157 @@ mongoose.connection.on(
 // START SERVER
 // ==========================================
 
-const startServer =
-  async () => {
-    try {
-      await connectDatabase();
+server.listen(
+  PORT,
+  () => {
+    console.log("");
+    console.log(
+      "=========================================="
+    );
 
-      // ------------------------------------
-      // EMAIL SERVICE
-      // ------------------------------------
+    console.log(
+      "🚀 Healthcare Service Companion Backend"
+    );
 
-      try {
-        await verifyEmailConnection();
+    console.log(
+      "=========================================="
+    );
 
+    console.log(
+      `📡 Server running on http://localhost:${PORT}`
+    );
+
+    console.log(
+      `❤️ Health check: http://localhost:${PORT}/api/health`
+    );
+
+    console.log(
+      `🔌 Socket.IO running on http://localhost:${PORT}`
+    );
+
+    console.log(
+      "=========================================="
+    );
+
+    console.log(
+      "✅ Routes loaded:"
+    );
+
+    console.log(
+      "   /api/auth"
+    );
+
+    console.log(
+      "   /api/users"
+    );
+
+    console.log(
+      "   /api/doctors"
+    );
+
+    console.log(
+      "   /api/appointments"
+    );
+
+    console.log(
+      "   /api/ambulances"
+    );
+
+    console.log(
+      "   /api/ambulance-requests"
+    );
+
+    console.log(
+      "   /api/drivers"
+    );
+
+    console.log(
+      "   /api/hospitals"
+    );
+
+    console.log(
+      "   /api/admin"
+    );
+
+    console.log(
+      "   /api/payment"
+    );
+
+    console.log(
+      "   /api/support"
+    );
+
+    console.log(
+      "   /api/ai"
+    );
+
+    console.log(
+      "=========================================="
+    );
+    console.log("");
+  }
+);
+
+
+// ==========================================
+// GRACEFUL SHUTDOWN
+// ==========================================
+
+const gracefulShutdown =
+  async (signal) => {
+    console.log(
+      `\n🛑 ${signal} received. Shutting down...`
+    );
+
+    server.close(
+      async () => {
         console.log(
-          "📧 Email service connected"
-        );
-      } catch (emailError) {
-        console.warn(
-          "⚠️ Email service unavailable:",
-          emailError.message
+          "🔌 HTTP server closed"
         );
 
-        /*
-         * Do not stop the entire server
-         * if email service is unavailable.
-         */
-      }
+        try {
+          await mongoose.connection.close();
 
-      // ------------------------------------
-      // START HTTP + SOCKET SERVER
-      // ------------------------------------
-
-      server.listen(
-        PORT,
-        () => {
-          console.log("");
           console.log(
-            "=========================================="
+            "🗄️ MongoDB connection closed"
           );
-          console.log(
-            "🚀 HealthCompanion Server Started"
+        } catch (error) {
+          console.error(
+            "❌ MongoDB shutdown error:",
+            error.message
           );
-          console.log(
-            "=========================================="
-          );
-          console.log(
-            `🌐 Server: http://localhost:${PORT}`
-          );
-          console.log(
-            `🔌 Socket.IO: http://localhost:${PORT}`
-          );
-          console.log(
-            `💚 Health: http://localhost:${PORT}/api/health`
-          );
-          console.log(
-            "=========================================="
-          );
-          console.log("");
         }
-      );
-    } catch (error) {
-      console.error(
-        "❌ Server startup failed:",
-        error
-      );
 
-      process.exit(1);
-    }
+        process.exit(0);
+      }
+    );
+
+    setTimeout(
+      () => {
+        console.error(
+          "⚠️ Forced shutdown"
+        );
+
+        process.exit(1);
+      },
+      10000
+    );
   };
+
+
+process.on(
+  "SIGINT",
+  () => {
+    gracefulShutdown("SIGINT");
+  }
+);
+
+process.on(
+  "SIGTERM",
+  () => {
+    gracefulShutdown("SIGTERM");
+  }
+);
 
 
 // ==========================================
@@ -2414,92 +2209,11 @@ process.on(
 
 
 // ==========================================
-// GRACEFUL SHUTDOWN
+// EXPORTS
 // ==========================================
 
-const gracefulShutdown =
-  async (signal) => {
-    console.log(
-      `\n🛑 ${signal} received. Shutting down...`
-    );
-
-    try {
-      // ------------------------------------
-      // CLOSE SOCKET CONNECTIONS
-      // ------------------------------------
-
-      io.close(() => {
-        console.log(
-          "🔌 Socket.IO closed"
-        );
-      });
-
-      // ------------------------------------
-      // CLOSE HTTP SERVER
-      // ------------------------------------
-
-      server.close(
-        async () => {
-          console.log(
-            "🌐 HTTP server closed"
-          );
-
-          // ------------------------------
-          // CLOSE MONGODB
-          // ------------------------------
-
-          try {
-            await mongoose.connection.close();
-
-            console.log(
-              "🗄️ MongoDB connection closed"
-            );
-          } catch (mongoError) {
-            console.error(
-              "❌ MongoDB shutdown error:",
-              mongoError
-            );
-          }
-
-          process.exit(0);
-        }
-      );
-    } catch (error) {
-      console.error(
-        "❌ Graceful shutdown error:",
-        error
-      );
-
-      process.exit(1);
-    }
-  };
-
-
-// ==========================================
-// PROCESS SIGNALS
-// ==========================================
-
-process.on(
-  "SIGINT",
-  () => {
-    gracefulShutdown(
-      "SIGINT"
-    );
-  }
-);
-
-process.on(
-  "SIGTERM",
-  () => {
-    gracefulShutdown(
-      "SIGTERM"
-    );
-  }
-);
-
-
-// ==========================================
-// START
-// ==========================================
-
-startServer();
+module.exports = {
+  app,
+  server,
+  io,
+};

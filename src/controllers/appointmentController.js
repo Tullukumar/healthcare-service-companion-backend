@@ -360,13 +360,16 @@ const getDoctorAppointments = async (
     // ONLY DOCTORS
     // ------------------------------------------
 
-    if (req.user.role !== "doctor") {
-      return res.status(403).json({
-        success: false,
-        message:
-          "Only doctors can access doctor appointments",
-      });
-    }
+    if (
+  req.user.role !== "doctor" &&
+  req.user.role !== "admin"
+) {
+  return res.status(403).json({
+    success: false,
+    message:
+      "Only doctors and admins can access doctor appointments",
+  });
+}
 
     // ------------------------------------------
     // FIND DOCTOR PROFILE
@@ -436,14 +439,16 @@ const approveAppointment = async (
     // ------------------------------------------
     // ONLY DOCTORS
     // ------------------------------------------
-
-    if (req.user.role !== "doctor") {
-      return res.status(403).json({
-        success: false,
-        message:
-          "Only doctors can approve appointments",
-      });
-    }
+if (
+  req.user.role !== "doctor" &&
+  req.user.role !== "admin"
+) {
+  return res.status(403).json({
+    success: false,
+    message:
+      "Only doctors and admins can approve appointments",
+  });
+}
 
     // ------------------------------------------
     // FIND DOCTOR PROFILE
@@ -674,14 +679,16 @@ const rejectAppointment = async (
     // ------------------------------------------
     // ONLY DOCTORS
     // ------------------------------------------
-
-    if (req.user.role !== "doctor") {
-      return res.status(403).json({
-        success: false,
-        message:
-          "Only doctors can reject appointments",
-      });
-    }
+if (
+  req.user.role !== "doctor" &&
+  req.user.role !== "admin"
+) {
+  return res.status(403).json({
+    success: false,
+    message:
+      "Only doctors and admins can reject appointments",
+  });
+}
 
     // ------------------------------------------
     // FIND DOCTOR PROFILE
@@ -914,14 +921,16 @@ const completeAppointment = async (
     // ------------------------------------------
     // ONLY DOCTORS
     // ------------------------------------------
-
-    if (req.user.role !== "doctor") {
-      return res.status(403).json({
-        success: false,
-        message:
-          "Only doctors can complete appointments",
-      });
-    }
+if (
+  req.user.role !== "doctor" &&
+  req.user.role !== "admin"
+) {
+  return res.status(403).json({
+    success: false,
+    message:
+      "Only doctors and admins can complete appointments",
+  });
+}
 
     // ------------------------------------------
     // FIND DOCTOR PROFILE
@@ -1125,7 +1134,7 @@ const completeAppointment = async (
         "Appointment completed successfully",
       appointment,
     });
-  } catch (error) {
+  }  catch (error) {
     console.error(
       "Complete appointment error:",
       error.message
