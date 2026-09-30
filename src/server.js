@@ -19,7 +19,10 @@ const PORT = process.env.PORT || 5000;
 
 app.use(
   cors({
-    origin: "http://localhost:5173",
+   origin: [
+  "http://localhost:5173",
+  "https://healthcare-service-companion.vercel.app",
+],
 
     methods: [
       "GET",
@@ -71,7 +74,10 @@ app.use(
 
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:5173",
+    origin: [
+  "http://localhost:5173",
+  "https://healthcare-service-companion.vercel.app",
+],
 
     methods: [
       "GET",
